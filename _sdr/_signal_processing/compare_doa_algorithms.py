@@ -32,7 +32,7 @@ from kraken_sdr_signal_processor import SignalProcessor
 from kraken_sdr_receiver import ReceiverRTLSDR
 from variables import shared_path
 
-DOA_algorithms = ["Bartlett", "Capon", "MEM", "MUSIC", "ROOT-MUSIC"] # "TNA",
+DOA_algorithms = ["Bartlett", "Capon", "MEM", "MUSIC"] # "ROOT-MUSIC", "TNA",
 
 if not os.path.exists(shared_path):
     os.makedirs(shared_path)
@@ -56,22 +56,27 @@ tone2 = np.exp(2j*np.pi*0.02e6*t).reshape(1,-1)
 tone3 = np.exp(2j*np.pi*0.03e6*t).reshape(1,-1)
 X = s1 @ tone1 + s2 @ tone2 + s3 @ tone3 # note the last one is 1/10th the strength
 n = np.random.randn(Nr, N) + 1j*np.random.randn(Nr, N)
-X = X + 0.05*n # Nr x N
+X = X + 0.5*n # Nr x N
 
 sp.DOA_expected_num_of_sources = 3 # used for MUSIC
 
-fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-for DOA_algorithm in DOA_algorithms:
+fig, axs = plt.subplots(len(DOA_algorithms), 1, figsize=(6, 9), subplot_kw={'projection': 'polar'})
+fig.subplots_adjust(hspace=-0.2)
+for i, DOA_algorithm, in enumerate(DOA_algorithms):
     print(f"Running DOA algorithm {DOA_algorithm}")
     sp.DOA_algorithm = DOA_algorithm
-    sp.estimate_DOA(processed_signal=X, vfo_freq=sp.module_receiver.daq_center_freq) # vfo_freq will be 1 and wont mess with things
+    sp.estimate_DOA(processed_signal=X, vfo_freq=sp.module_receiver.daq_center_freq)
     theta_scan = np.linspace(0, 2*np.pi, len(sp.DOA))
-    ax.plot(theta_scan, sp.DOA.real / np.max(sp.DOA.real))
+    axs[i].plot(theta_scan, sp.DOA.real / np.max(sp.DOA.real), alpha=0.75)
+    axs[i].plot([theta1, theta2, theta3], [1.1, 1.1, 1.1], '.', color='red')
+    axs[i].set_ylabel(DOA_algorithm, rotation=0, labelpad=50)
+    axs[i].set_theta_zero_location('N') # make 0 degrees point up
+    axs[i].set_theta_direction(-1) # increase clockwise
+    axs[i].set_rlabel_position(55)  # Move grid labels away from other labels
+    axs[i].set_thetamin(-90) # only show top half
+    axs[i].set_thetamax(90)
+    axs[i].set_position([0, i*0.22, 1, 0.3]) # left, bottom, width, height
 
-ax.plot([theta1, theta2, theta3], [1.1, 1.1, 1.1], '.', color='red')
-ax.set_theta_zero_location('N') # make 0 degrees point up
-ax.set_theta_direction(-1) # increase clockwise
-ax.set_rlabel_position(55)  # Move grid labels away from other labels
-# add legend
-ax.legend(DOA_algorithms, loc='upper right', bbox_to_anchor=(1.1, 1.1), fontsize=8)
+fig.tight_layout()
+plt.savefig("DOA_algorithms_comparison.png", dpi=300, bbox_inches='tight')
 plt.show()
