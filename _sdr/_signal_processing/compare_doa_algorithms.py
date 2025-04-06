@@ -28,7 +28,7 @@ sys.path.insert(0, "../../_ui/_web_interface")
 sys.path.insert(0, "../../_sdr/_receiver")
 sys.path.insert(0, "../../_sdr/_signal_processing")
 
-from kraken_sdr_signal_processor import SignalProcessor
+import kraken_sdr_signal_processor
 from kraken_sdr_receiver import ReceiverRTLSDR
 from variables import shared_path
 
@@ -37,9 +37,24 @@ DOA_algorithms = ["Bartlett", "Capon", "MEM", "MUSIC"] # "ROOT-MUSIC", "TNA",
 if not os.path.exists(shared_path):
     os.makedirs(shared_path)
 
-rtl = ReceiverRTLSDR(queue.Queue(1), data_interface="eth", logging_level=10)
-sp = SignalProcessor(queue.Queue(1), module_receiver=rtl, logging_level=10)
+thetas = np.linspace(0, 360, 1000)
 
+# Monkey patch to increase theta resolution for plotting purposes
+def modified_gen_scanning_vectors_ula(M, DOA_inter_elem_space, type, offset):
+    x = np.zeros(M)
+    y = -np.arange(M) * DOA_inter_elem_space
+    scanning_vectors = np.zeros((M, thetas.size), dtype=np.complex64)
+    for i in range(thetas.size):
+        scanning_vectors[:, i] = np.exp(1j * 2 * np.pi * (x * np.cos(np.deg2rad(thetas[i] + offset)) + y * np.sin(np.deg2rad(thetas[i] + offset))))
+    return np.ascontiguousarray(scanning_vectors)
+kraken_sdr_signal_processor.gen_scanning_vectors = modified_gen_scanning_vectors_ula
+
+rtl = ReceiverRTLSDR(queue.Queue(1), data_interface="eth", logging_level=10)
+sp = kraken_sdr_signal_processor.SignalProcessor(queue.Queue(1), module_receiver=rtl, logging_level=10)
+
+sp.DOA_theta = thetas
+
+# Scenario
 N = 10000
 sample_rate = 1e6
 Nr = 5 # elements
@@ -67,7 +82,7 @@ for i, DOA_algorithm, in enumerate(DOA_algorithms):
     sp.DOA_algorithm = DOA_algorithm
     sp.estimate_DOA(processed_signal=X, vfo_freq=sp.module_receiver.daq_center_freq)
     theta_scan = np.linspace(0, 2*np.pi, len(sp.DOA))
-    axs[i].plot(theta_scan, sp.DOA.real / np.max(sp.DOA.real), alpha=0.75)
+    axs[i].plot(theta_scan, kraken_sdr_signal_processor.DOA_plot_util(sp.DOA), alpha=0.75)
     axs[i].plot([theta1, theta2, theta3], [1.1, 1.1, 1.1], '.', color='red')
     axs[i].set_ylabel(DOA_algorithm, rotation=0, labelpad=50)
     axs[i].set_theta_zero_location('N') # make 0 degrees point up
@@ -78,5 +93,5 @@ for i, DOA_algorithm, in enumerate(DOA_algorithms):
     axs[i].set_position([0, i*0.22, 1, 0.3]) # left, bottom, width, height
 
 fig.tight_layout()
-plt.savefig("DOA_algorithms_comparison.png", dpi=300, bbox_inches='tight')
+plt.savefig("DOA_algorithms_comparison.svg", bbox_inches='tight')
 plt.show()
